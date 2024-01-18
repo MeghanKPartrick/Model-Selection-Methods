@@ -1,0 +1,264 @@
+---
+title: 'Model Selection Methods'
+output:
+  word_document: default
+  html_document:
+    df_print: paged
+  pdf_document: default
+---
+    
+__Situation:__ Can we predict the selling price of a house in Ames, Iowa based on recorded features of the house? We will use a dataset with information on forty potential predictors and the selling price (in $1,000’s) for a sample of homes. A separate file identifies the variables in the Ames Housing data and explains some of the coding.
+
+### Part 1. Build an initial “basic” model ###    
+Your basic model can use any of the quantitative variables in the dataset but should NOT use the categorical variables, transformations, or interactions. Use your data to select a set of predictors to include in your model. Keep track of the process you use and decisions you make to arrive at an initial set of predictors. Your report should include a summary of this process. You don’t need to show all the output for every model you consider, but you should give a clear description of the path you took and the criteria that you used to compare competing models. Also, use at least two model selection methods to find a model.
+
+In addition to the commentary on model selection, include the following information for this initial choice of a model: the summary() output for your model, comments on which (if any) of the predictors in the model are not significant at a 5% level, and comments on what the VIF values tell you about the individual predictors in your model.
+
+```{r}
+library(readr)
+library(dplyr)
+library(car)
+```
+
+
+```{r}
+AmesHouse <- read_csv("AmesTrain10.csv")
+
+AmesHouse_Numeric = AmesHouse %>% select_if(is.numeric)
+```
+
+```{r}
+#Beginning model selection process and using a forward step selection method
+
+Full = lm(Price~., data = AmesHouse_Numeric)
+MSE = (summary(Full)$sigma)^2
+none = lm(Price~1, data=AmesHouse_Numeric)
+step(none, scope=list(upper=Full), scale=MSE, direction="forward", trace=FALSE)
+```
+
+
+```{r}
+#Using a regular step selection method, including forward and backward
+
+step(none, scope=list(upper=Full), scale=MSE, trace=FALSE)
+step_mod = step(none, scope=list(upper=Full), scale=MSE, trace=FALSE)
+```
+
+
+I used the step and forward step methods to find a model. They left us with the same model, which is assigned to step_mod.
+
+
+```{r}
+cor.test(AmesHouse_Numeric$BasementSF, AmesHouse_Numeric$BasementFinSF)
+cor.test(AmesHouse_Numeric$ScreenPorchSF, AmesHouse_Numeric$EnclosedPorchSF)
+```
+
+I checked correlation to see if there was enough evidence to take out a predictor in order to make our model better. This was in case variables such as basementSF and basementFinSF were explained by each other (multicollinearity). The porch variables were obviously not explained by each other and both needed to be left in. There is not enough evidence to prove that the correlation is not 0. The basement variables have a much higher correlation and we have reason to believe that the correlation is not zero, but it is below 0.5, which means only about 50% of the variability in BasementSF is explained by BasementFinSF. We decided to keep both of the variables in for that reason. None of the other variables gave us concern to check them, so we are now done with our model.
+
+
+```{r}
+summary(step_mod)
+```
+
+The predictors of halfbath, screenporchSF, and enclosedporchSF all are not significant at a 5% level.
+
+```{r}
+vif(step_mod)
+```
+
+The VIF values show that FirstSF has the largest multicollinearity. This means that this variable may be explained by other variables in the data. Values above five are too high, meaning FirstSF is an issue in our data, but no other variables currently.
+    
+       
+### Part 2. Residual analysis for your basic model ###    
+Do a residual analysis for the model you chose in Part 1. Include any plots relevant to checking model conditions - with interpretations. Also check whether any of the data cases are unusual with respect to studentized residuals. Since there are a lot of data points don’t worry about the “mild” cases for studentized residuals, but indicate what specific criteria you are using to identify “unusual” points. 
+   
+Adjust your model (either the predictors included or data values that are used to fit it, but not yet using transformations) on the basis of your residual analysis – but don’t worry too much about trying to get all conditions “perfect”.  For example, don’t automatically just delete any points that might give large residuals! If you do refit something, be sure to document what changed and include the new summary() output.
+    
+```{r}
+plot(step_mod)
+```
+
+Normality: Normality is definitely an issue. The data is large (n=600) and the normal Q-Q plot shows extreme skewness. It is important to note the scale in which the normal Q-Q plot is in as well. It is already obviously skewed, but noticing the large scale moving from -4 to 6 on the y-axis, we can see that this is zoomed out in order to show all the points. 
+
+Linearity: Shown by the residuals vs. fitted plot, we can definitely see a trend that is nonlinear (likely a curve). The data is patterned in a curviture on the plot.
+
+Constant Variance: Constant variance is somewhat an issue as well. There seems to be lots of points very close together at the beginning, while they start to fan out near the end.
+
+```{r}
+head(sort(rstudent(step_mod), decreasing=TRUE), 10)
+head(sort(rstudent(step_mod)), 10)
+```
+
+
+Looking at the studentized residuals, we can see many mild cases (absolute values from 2 to 3.5), but we can also see many extreme cases (with absolute values from 3.5 up to 6.7). This raises concern, which leads us to check leverage values and cooks distance in order to see if we need to remove any data points.
+
+```{r}
+head(sort(hatvalues(step_mod), decreasing=TRUE), 20)
+head(sort(cooks.distance(step_mod), decreasing=TRUE), 10)
+```
+
+```{r}
+2/600
+
+2 * 2/600
+3 * 2/600
+```
+
+While looking at these leverage values, we can see that there are over 20 values that show a potential for influence. All of these points are greater than 3 times the average leverage. We can look further into their influence by checking cooks distance values as I did on the next line. These values show little to no influence except for one point. Point number 179 has an extremely large influence with a cooks distance value at almost 2.2. This shows major influence and our model could be well improved by taking this point out of the dataset as shown below.
+
+```{r}
+AmesHouse_Numeric[c(179),]
+AmesHouse_Numeric_po <- AmesHouse_Numeric[-c(179),]
+
+step_mod_po = lm(Price ~ Quality + FirstSF + SecondSF + BasementFinSF + 
+    LotArea + YearBuilt + GarageSF + BasementSF + YearRemodel + 
+    LotFrontage + Fireplaces + HalfBath + Condition + Bedroom + 
+    TotalRooms + ScreenPorchSF + EnclosedPorchSF, data = AmesHouse_Numeric_po)
+
+plot(step_mod_po)
+```
+
+
+```{r}
+summary(step_mod_po)
+```
+
+
+Now the points have been taken out of the dataset. This is the finished model. 
+
+### Part 3. Find a "Fancier" Model ###  
+
+In addition to the quantitative predictors from Part 1, you may now consider models with:
+• Transformations of predictors. You can include functions of quantitative predictors. Probably best to use the I() notation so you don’t need to create new columns when you run the predictions for the test data. For example: lm(Price~LotArea+I(LotArea^2)+sqrt(LotArea)+log(LotArea),...
+• Transformations of the response. You might address curvature or skewness in residual plots by transforming the response prices with a function like log(Price ), sqrt(Price), Price^2, etc.. These should generally not need the I( ) notation to make these adjustments.
+• Combinations of variables. This might include for example creating a new variable which would count the total bathrooms in the house in a single predictor.
+
+```{r}
+Full_log = lm(log(Price)~., data = AmesHouse_Numeric)
+MSE_log = (summary(Full_log)$sigma)^2
+none_log = lm(log(Price)~1, data=AmesHouse_Numeric)
+step_mod_log = step(none_log, scope=list(upper=Full_log), scale=MSE_log, direction="forward", trace=FALSE)
+step(none_log, scope=list(upper=Full_log), scale=MSE_log, trace=FALSE)
+```
+
+
+```{r}
+step(none_log, scope=list(upper=Full_log), scale=MSE_log, direction="forward", trace=FALSE)
+```
+
+```{r}
+step_mod_log_no_order = lm(log(Price) ~ Quality + GroundSF + BasementFinSF + YearBuilt + Condition + BasementSF + LotArea + GarageCars + ScreenPorchSF + EnclosedPorchSF + Fireplaces + Order + BasementFBath + WoodDeckSF + LotFrontage + OpenPorchSF + YearRemodel + FullBath,
+    data = AmesHouse_Numeric)
+summary(step_mod_log_no_order)
+
+```
+
+```{r}
+Full_sqrt = lm(sqrt(Price)~., data = AmesHouse_Numeric)
+MSE_sqrt = (summary(Full_sqrt)$sigma)^2
+none_sqrt = lm(sqrt(Price)~1, data=AmesHouse_Numeric)
+step_mod_sqrt = step(none_sqrt, scope=list(upper=Full_sqrt), scale=MSE_sqrt, direction="forward", trace=FALSE)
+step(none_sqrt, scope=list(upper=Full_sqrt), scale=MSE_sqrt, trace=FALSE)
+
+```
+
+
+
+```{r}
+step_mod_sqrt_no_order = lm(sqrt(Price) ~ Quality + GroundSF + BasementFinSF +
+BasementSF + YearBuilt + LotArea + Condition + GarageSF + Fireplaces + YearRemodel + LotFrontage + ScreenPorchSF + EnclosedPorchSF + WoodDeckSF + Bedroom + FullBath + TotalRooms, data = AmesHouse_Numeric)
+
+summary(step_mod_sqrt_no_order)
+```
+
+```{r}
+plot(step_mod_log_no_order)
+```
+
+```{r}
+plot(step_mod_sqrt)
+```
+
+Discuss the process that you used to transform the predictors and/or response so that you could use this process in the future on a new data set.
+
+From looking at the right skew on the original graph, we decided to test both the square root function and log function as a transformation of the response variable. After trying both, by looking at the plots we decided that the log function better represented our data. The full analysis of our process and why our data is better represented in the log function is shown in part 4. We used the regular step and forward step models to choose a good model. These two selection methods produced the same model, allowing us to make the right decision. This model had a Mallow’s CP of 14.79, which was the lowest out of the possible models shown.
+
+Note: We had to remove order from both of the models so that is shown after the model selection methods were finished.
+
+### Part 4. Residual Analysis for the fancier model ###    
+
+```{r}
+plot(step_mod_log_no_order)
+```
+Normality: The normality of the finished plot has definitely improved. Looking at the normal Q-Q plot we can see that there has not been much improvement on the left skew, but the right skew has been much improved. The points are much closer to the line considering the differences in scale that all of the Normal Q-Q plots have.
+
+Linearity: The residuals vs. fitted plot shows a very nice fit as well for linearity. The red line shows a close fit to the dotted line. There is no obvious trend in the data based upon that.
+
+Constant Variance: The constant variance looks good as well. The points are well distributed above and below the line and don’t seem to be showing a large pattern.
+
+```{r}
+head(sort(rstudent(step_mod_log_no_order), decreasing=TRUE), 10)
+
+head(sort(rstudent(step_mod_log_no_order)), 10)
+```
+
+
+Looking at the studentized residuals shows us that there are a lot of mild cases (absolute values between 2 and 3.5), but there are also a few that are much larger than this. Points 299, 179, and 458 all show very large residuals, which are below -3.5. This shows a very large possibility of influence, but to know which ones are actually influential we will have to check cooks distance and leverage.
+
+```{r}
+head(sort(hatvalues(step_mod_log_no_order), decreasing=TRUE), 10)
+
+head(sort(cooks.distance(step_mod_log_no_order), decreasing=TRUE), 10)
+
+2/600
+
+2/600 * 2
+
+2/600 * 3
+```
+
+
+The leverage points above show a very large possibility of influence for all of the top 10 points shown. This means that there could possibly be more than the top 10 that have a possibility of influence. To know for sure, we will have to check cooks distance as shown on the next line. These values are all small except for two points. Points 179 and 299 have cooks distance values of 1.55 and 0.58, respectively. Any values above 0.5 show influence, which means we have found our two points that we need to remove.
+
+```{r}
+AmesHouse_Numeric[c(179, 299),]
+
+AmesHouse_Numeric2 <- AmesHouse_Numeric[-c(179, 299),]
+
+Final_mod = lm(log(Price) ~ Quality + GroundSF + BasementFinSF + BasementSF + YearBuilt + LotArea + Condition + GarageSF + Fireplaces + YearRemodel + LotFrontage + ScreenPorchSF + EnclosedPorchSF + WoodDeckSF + Bedroom + FullBath + TotalRooms, data = AmesHouse_Numeric2)
+plot(Final_mod)
+```
+
+
+After removing our last two points (179 and 299), we have concluded with our final model. This is shown above.
+
+### Part 5. Final model ###     
+
+```{r}
+AmesHouse_Numeric[c(179, 299),]
+AmesHouse_Numeric2 <- AmesHouse_Numeric[-c(179, 299),]
+
+Final_mod = lm(log(Price) ~ Quality + GroundSF + BasementFinSF + 
+    BasementSF + YearBuilt + LotArea + Condition + GarageSF + 
+    Fireplaces + YearRemodel + LotFrontage + ScreenPorchSF + 
+    EnclosedPorchSF + WoodDeckSF + Bedroom + FullBath + 
+    TotalRooms, data = AmesHouse_Numeric2)
+```
+
+Suppose that you are interested in a house Ames that has characteristics listed below and want to find a 95% prediction interval for the price of this house.     
+    
+A 2 story 11 room home, built in 1983 and remodeled in 1999 on a 21540 sq. ft. lot with 400 feet of road frontage. Overall quality is good (7) and condition is average (5). The quality and condition of the exterior are both good (Gd) and it has a poured concrete foundation. There is an 757 sq. foot basement that has excellent height, but is completely unfinished and has no bath facilities. Heating comes from a gas air furnace that is in excellent condition and there is central air conditioning. The house has 2432 sq. ft. of living space above ground, 1485 on the first floor and 947 on the second, with 4 bedrooms, 2 full and one half baths, and 1 fireplace. The 2 car, built-in garage has 588 sq. ft. of space and is average (TA) for both quality and construction. The only porches or decks is a 384 sq. ft. open porch in the front. 
+
+
+```{r}
+head(AmesHouse)
+
+newx=data.frame(HouseStyle='2Story', TotalRooms=11, YearBuilt=1983, YearRemodel=1999, LotArea=21540, LotFrontage=400, Quality=7, Condition=5, ExteriorQ='Gd', Foundation='PConc', BasementUnFinSF=757, BasementHt='Ex', BasementFBath=0, BasementHBath=0, Heating='GasA', HeatingQC='Ex', CentralAir='Y', GroundSF=2432, FirstSF=1485, SecondSF=947, Bedroom=4, FullBath=2, HalfBath=1, Fireplaces=1, GarageCars=2, GarageType='Attchd', GarageSF=588, GarageQ='TA', GarageC='TA', OpenPorshSF=384, EnclosedPorchSF=0, ScreenPorchSF=0, BasementFinSF=0, BasementSF=757, WoodDeckSF=0)
+
+head(newx)
+
+exp(predict.lm(Final_mod, newx, interval="prediction"))
+```
+
+
+The 95% prediction interval for the price of a house with these characteristics is from $206,969 to $358,899.
