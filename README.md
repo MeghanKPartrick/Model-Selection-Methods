@@ -11,6 +11,8 @@ This project consists of predicting the selling price of homes based on 40 total
 <br />
 - <b>Library: Car</b>
 <br />
+- <b>Library: Readr</b>
+<br />
 <br />
 <br />
 
